@@ -184,99 +184,76 @@ async def skip(e, userid):
 async def CompressVideo(bot, query, ffmpegcode, c_thumb):
     UID = query.from_user.id
     ms = await query.message.edit('Pʟᴇᴀsᴇ Wᴀɪᴛ...\n\n**Fᴇᴛᴄʜɪɴɢ Qᴜᴇᴜᴇ 👥**')
-    
 
     if os.path.isdir(f'ffmpeg/{UID}') and os.path.isdir(f'encode/{UID}'):
         return await ms.edit("**⚠️ Yᴏᴜ ᴄᴀɴ ᴄᴏᴍᴘʀᴇss ᴏɴʟʏ ᴏɴᴇ ғɪʟᴇ ᴀᴛ ᴀ ᴛɪᴍᴇ\n\nAs ᴛʜɪs ʜᴇʟᴘs ʀᴇᴅᴜᴄᴇ sᴇʀᴠᴇʀ ʟᴏᴀᴅ.**")
 
     try:
         media = query.message.reply_to_message
-        file = getattr(media , media.media.value)
-        filename = Filename(filename=str(file.file_name), mime_type=str(file.mime_type))
+        file = getattr(media, media.media.value)
+        filename = str(file.file_name)
         Download_DIR = f"ffmpeg/{UID}"
         Output_DIR = f"encode/{UID}"
-        File_Path = f"ffmpeg/{UID}/{filename}"
-        Output_Path = f"encode/{UID}/{filename}"
-        
-        
+        File_Path = f"{Download_DIR}/{filename}"
+        Output_Path = f"{Output_DIR}/{filename}"
+
         await ms.edit('⚠️__**Please wait...**__\n**Tʀyɪɴɢ Tᴏ Dᴏᴡɴʟᴏᴀᴅɪɴɢ....**')
-        s = dt.now()
-        try:
-            if not os.path.isdir(Download_DIR) and not os.path.isdir(Output_DIR):
-                os.makedirs(Download_DIR)
-                os.makedirs(Output_DIR)
+        if not os.path.isdir(Download_DIR):
+            os.makedirs(Download_DIR)
+        if not os.path.isdir(Output_DIR):
+            os.makedirs(Output_DIR)
 
-                dl = await bot.download_media(
-                    message=file,
-                    file_name=File_Path,
-                    progress=progress_for_pyrogram,
-                    progress_args=("\n⚠️__**Please wait...**__\n\n☃️ **Dᴏᴡɴʟᴏᴀᴅ Sᴛᴀʀᴛᴇᴅ....**", ms, time.time())
-                )
-        except Exception as e:
-            return await ms.edit(str(e))
-        
-        es = dt.now()
-        dtime = ts(int((es - s).seconds) * 1000)
-
-        await ms.edit(
-            "**🗜 Compressing...**",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(text='Sᴛᴀᴛs', callback_data=f'stats-{UID}')],
-                [InlineKeyboardButton(text='Cᴀɴᴄᴇʟ', callback_data=f'skip-{UID}')]
-            ])
+        dl = await bot.download_media(
+            message=file,
+            file_name=File_Path,
+            progress=progress_for_pyrogram,
+            progress_args=("\n⚠️__**Please wait...**__\n\n☃️ **Dᴏᴡɴʟᴏᴀᴅ Sᴛᴀʀᴛᴇᴅ....**", ms, time.time())
         )
-        
-        cmd = f"""ffmpeg -i "{dl}" {ffmpegcode} "{Output_Path}" -y"""
 
+        await ms.edit('**🗜 Compressing...**')
+        cmd = f"""ffmpeg -i "{dl}" {ffmpegcode} "{Output_Path}" -y"""
         process = await asyncio.create_subprocess_shell(
             cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        
-
         stdout, stderr = await process.communicate()
-        er = stderr.decode()
+        if stderr:
+            await ms.edit(f"Error during compression:\n\n{stderr.decode()}")
+            shutil.rmtree(Download_DIR)
+            shutil.rmtree(Output_DIR)
+            return
 
-        try:
-            if er:
-                await ms.edit(str(er) + "\n\n**Error**")
-                shutil.rmtree(f"ffmpeg/{UID}")
-                shutil.rmtree(f"encode/{UID}")
-                return
-        except BaseException:
-            pass
-        
+        # Extract duration using ffmpeg
+        duration_cmd = f"""ffprobe -i "{Output_Path}" -show_entries format=duration -v quiet -of csv="p=0" """
+        duration_proc = await asyncio.create_subprocess_shell(
+            duration_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        duration_out, _ = await duration_proc.communicate()
+        duration = float(duration_out.decode().strip())
+        minutes, seconds = divmod(int(duration), 60)
+        duration_str = f"{minutes}:{seconds:02d}"
 
-        # Clean up resources
-        # Now Uploading to the User
-        ees = dt.now()
-        
-        if (file.thumbs or c_thumb):
-            if c_thumb:
-                ph_path = await bot.download_media(c_thumb)
-            else:
-                ph_path = await bot.download_media(file.thumbs[0].file_id)
+        if c_thumb:
+            ph_path = await bot.download_media(c_thumb)
+        else:
+            ph_path = None
 
-        org = int(Path(File_Path).stat().st_size)
-        com = int((Path(Output_Path).stat().st_size))
-        pe = 100 - ((com / org) * 100)
-        per = str(f"{pe:.2f}")  + "%"
-        eees = dt.now()
-        x = dtime
-        xx = ts(int((ees - es).seconds) * 1000)
-        xxx = ts(int((eees - ees).seconds) * 1000)
-        await ms.edit("⚠️__**Please wait...**__\n**Tʀyɪɴɢ Tᴏ Uᴩʟᴏᴀᴅɪɴɢ....**")
+        original_size = humanbytes(Path(File_Path).stat().st_size)
+        compressed_size = humanbytes(Path(Output_Path).stat().st_size)
+
         await bot.send_video(
-                UID,
-                video=Output_Path,
-                thumb=ph_path,
-                caption=Config.caption.format(filename, humanbytes(org), humanbytes(com) , per, x, xx, xxx),
-                progress=progress_for_pyrogram,
-                progress_args=("⚠️__**Please wait...**__\n🌨️ **Uᴩʟᴏᴅ Sᴛᴀʀᴛᴇᴅ....**", ms, time.time()))
-        
+            UID,
+            video=Output_Path,
+            thumb=ph_path,
+            caption=f"**Filename:** {filename}\n**Original Size:** {original_size}\n**Compressed Size:** {compressed_size}\n**Duration:** {duration_str}",
+            progress=progress_for_pyrogram,
+            progress_args=("⚠️__**Please wait...**__\n🌨️ **Uᴩʟᴏᴀᴅ Sᴛᴀʀᴛᴇᴅ....**", ms, time.time())
+        )
+
         if query.message.chat.type == enums.ChatType.SUPERGROUP:
             botusername = await bot.get_me()
-            await ms.edit(f"Hey {query.from_user.mention},\n\nI Have Send Compressed File To Your Pm", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="Bᴏᴛ Pᴍ", url=f'https://t.me/{botusername.username}')]]))
-            
+            await ms.edit(f"Hey {query.from_user.mention},\n\nI Have Sent The Compressed File To Your PM",
+                          reply_markup=InlineKeyboardMarkup(
+                              [[InlineKeyboardButton(text="Bᴏᴛ Pᴍ", url=f'https://t.me/{botusername.username}')]]))
         else:
             await ms.delete()
 
